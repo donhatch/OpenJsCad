@@ -14,7 +14,6 @@ function main() {
   let thickWallThickness = 2;
   //let thinWallThickness = .7;  // .7 is minimum allowed
   let thinWallThickness = .675;  // .7 is minimum allowed
-  //let thinWallThickness = 0; // swiss cheese
   let cylinderDiameter = 4;
   let cylinderResolution = 40;
 
@@ -23,6 +22,27 @@ function main() {
   //let separation = -.0001;
   //let separation = 1.5;
   //let separation = -3;
+
+  let preRoundRadius = .75;
+  let preRoundRes = 20;
+
+  //let postRoundRadius = .5;
+  let postRoundRadius = .675;
+  //let postRoundRadius = .75;
+  //let postRoundRadius = 1;  // never finishes?
+  let postRoundRes = 20;
+
+  // doing both takes a long time, not really feasible
+  let doPreRound = true;
+  let doPostRound = false;
+
+  let swissCheese = false;  // set to true to force thinWallThickness to 0
+
+  //==================================================
+
+  if (swissCheese) {
+    thinWallThickness = 0.;
+  }
 
 
   let vpv = (v0,v1) => {
@@ -96,12 +116,14 @@ function main() {
     if (to[0] == 0 && to[1] == 0) {
       return to[2] >= 0 ? csg : csg.rotateX(180);
     }
+    // XXX TODO: should use parallel transport math (2 householder reflections) instead of this
     let lat = Math.atan2(to[2], Math.hypot(to[0], to[1]));
     let lng = Math.atan2(to[1], to[0]);
     csg = csg.rotateY(90. - lat/Math.PI*180);  // Z axis towards X axis
     csg = csg.rotateZ(lng/Math.PI*180);  // X axis towards Y axis
     return csg;
   };
+
   let makeCylinderTheWayIThoughtItWasSupposedToWork = params => {
     if (false) {
       return CSG.cylinder(params);
@@ -121,226 +143,235 @@ function main() {
     cyl = rotateCSGtakingUnitVectorToUnitVector(cyl, [0,0,1], dir);
     cyl = cyl.translate(start);
     return cyl;
-  };
+  };  // makeCylinderTheWayIThoughtItWasSupposedToWork
 
 
+  // Start with 1/3 of the planes of the outer polyhedron...
+  let planes = [
+      [[0.3333333333333333,0.6666666666666667,0.6666666666666667],1.], // corner
+      [[0.5773502691896258,0.5773502691896258,0.5773502691896258],0.8909765116357686], // face
+      [[0.5,0.5,0.7071067811865475],0.9667811436055143], // frontishEdge
+      [[0.5,0.7071067811865475,0.5],0.9667811436055143], // toppishEdge
+      //[[-0.7071067811865475,0,-0.7071067811865475],0], // backLeftBounding
+      //[[-0.7071067811865475,-0.7071067811865475,0],0], // downLeftBounding
+      [[0.7071067811865475,0,-0.7071067811865475],0], // backRightBounding
+      //[[0.7071067811865475,-0.7071067811865475,0],0], // downRightBounding
+  ];
 
+  // Rotate, to form all the planes of the outer polyhedron...
+  if (true)
+  {
+    let n = planes.length;
+    for (let i = 0; i < 2*n; ++i) {
+      let plane = planes[i];
+      let normal = plane[0];
+      let offset = plane[1];
+      // rotate z -> y -> -x
+      //planes.push([[-normal[1],normal[2],normal[0]], offset]);
+      // no, it's this instead.  I have no idea why.
+      planes.push([[-normal[1],normal[2],-normal[0]], offset]);
+    }
+  }
+
+  // its right corner is pointed at -1,1,1.  re-point it at 1,1,1.
+  for (let plane of planes) {
+    plane[0] = [plane[0][1], -plane[0][0], plane[0][2]];
+  }
+  console.log("planes.length = "+planes.length);
+  //console.log("planes = "+planes);
+
+
+  if (true) {
+    // Try to get the three primary faces axis aligned at the origin
+    for (let i = 0; i < planes.length; ++i) {
+      let plane = planes[i];
+
+      plane = rotateZ(plane, 45);
+      plane = rotateX(plane, -Math.atan2(1,Math.sqrt(2))/Math.PI*180);
+      plane = rotateY(plane, 60);
+      plane = rotateX(plane, Math.atan2(1,Math.sqrt(2))/Math.PI*180);
+      plane = rotateZ(plane, -45);
+      plane = translatePlane(plane, [-1,-1,-1]);
+      plane = rotateZ(plane, 180);
+      plane = rotateX(plane, 90);
+
+      // Fudge so first set of stuff is roughly on xy plane,
+      // since that's what I assume when making cylinders
+      plane = rotateY(plane, -90);
+      plane = rotateZ(plane, -90);
+
+      planes[i] = plane;
+    }
+  }
+
+  let clay = CSG.cube({radius: 10});
+  for (let planeSpec of planes) {
+    let normal = planeSpec[0];
+    let offset = planeSpec[1];
+    //let plane = new CSG.Plane(normal, offset);
+    var plane = CSG.Plane.fromNormalAndPoint(normal, [offset*normal[0], offset*normal[1], offset*normal[2]]);
+    clay = clay.cutByPlane(plane);
+  }
+
+
+  // Figure out bounding box
   if (false) {
-    let cube = CSG.roundedCube({radius: 10, roundradius: 2, resolution: 16});
-    let sphere = CSG.sphere({radius: 10, resolution: 16}).translate([5, 5, 5]);
-    return cube.union(sphere);
-  } else {
+    console.log("clay.getBounds() = "+clay.getBounds());
+    console.log("clay.getBounds()[0] = "+clay.getBounds()[0]);
+    console.log("clay.getBounds()[1] = "+clay.getBounds()[1]);
+    console.log("clay.getBounds()[0].x = "+clay.getBounds()[0].x);
+    console.log("clay.getBounds()[0].y = "+clay.getBounds()[0].y);
+    console.log("clay.getBounds()[0].z = "+clay.getBounds()[0].z);
+    console.log("clay.getBounds()[1].x = "+clay.getBounds()[1].x);
+    console.log("clay.getBounds()[1].y = "+clay.getBounds()[1].y);
+    console.log("clay.getBounds()[1].z = "+clay.getBounds()[1].z);
+  }
 
-    // Start with 1/3 of the planes of the outer polyhedron...
-    let planes = [
-        [[0.3333333333333333,0.6666666666666667,0.6666666666666667],1.], // corner
-        [[0.5773502691896258,0.5773502691896258,0.5773502691896258],0.8909765116357686], // face
-        [[0.5,0.5,0.7071067811865475],0.9667811436055143], // frontishEdge
-        [[0.5,0.7071067811865475,0.5],0.9667811436055143], // toppishEdge
-        //[[-0.7071067811865475,0,-0.7071067811865475],0], // backLeftBounding
-        //[[-0.7071067811865475,-0.7071067811865475,0],0], // downLeftBounding
-        [[0.7071067811865475,0,-0.7071067811865475],0], // backRightBounding
-        //[[0.7071067811865475,-0.7071067811865475,0],0], // downRightBounding
-    ];
+  let scale = modelWidth/(clay.getBounds()[1].y - clay.getBounds()[0].y);  // arbitrary one of the three
+  console.log("scaling by "+scale+" to get modelWidth="+modelWidth);
 
-    // Rotate, to form all the planes of the outer polyhedron...
-    if (true)
-    {
-      let n = planes.length;
-      for (let i = 0; i < 2*n; ++i) {
-        let plane = planes[i];
-        let normal = plane[0];
-        let offset = plane[1];
-        // rotate z -> y -> -x
-        //planes.push([[-normal[1],normal[2],normal[0]], offset]);
-        // no, it's this instead.  I have no idea why.
-        planes.push([[-normal[1],normal[2],-normal[0]], offset]);
-      }
-    }
+  clay = clay.scale(scale);
+  if (false) {
+    console.log("clay.getBounds() = "+clay.getBounds());
+    console.log("clay.getBounds()[0] = "+clay.getBounds()[0]);
+    console.log("clay.getBounds()[1] = "+clay.getBounds()[1]);
+    console.log("clay.getBounds()[0].x = "+clay.getBounds()[0].x);
+    console.log("clay.getBounds()[0].y = "+clay.getBounds()[0].y);
+    console.log("clay.getBounds()[0].z = "+clay.getBounds()[0].z);
+    console.log("clay.getBounds()[1].x = "+clay.getBounds()[1].x);
+    console.log("clay.getBounds()[1].y = "+clay.getBounds()[1].y);
+    console.log("clay.getBounds()[1].z = "+clay.getBounds()[1].z);
+  }
 
-    // its right corner is pointed at -1,1,1.  re-point it at 1,1,1.
-    for (let plane of planes) {
-      plane[0] = [plane[0][1], -plane[0][0], plane[0][2]];
-    }
-    console.log("planes.length = "+planes.length);
-    //console.log("planes = "+planes);
+  // and scale the planes too, to be used in subsequent operations
+  for (let i = 0; i < planes.length; ++i) {
+    planes[i] = scalePlane(planes[i], scale);
+  }
 
+  if (doPreRound && preRoundRadius > 0.) {
+    console.log("    starting pre-round");
+    clay = clay.contract(preRoundRadius, preRoundRes);
+    console.log("    halfway done with pre-round");
+    clay = clay.expand(preRoundRadius, preRoundRes);
+    console.log("    done with pre-round");
+  }
 
-    if (true) {
-      // Try to get the three primary faces axis aligned at the origin
-      for (let i = 0; i < planes.length; ++i) {
-        let plane = planes[i];
-
-        plane = rotateZ(plane, 45);
-        plane = rotateX(plane, -Math.atan2(1,Math.sqrt(2))/Math.PI*180);
-        plane = rotateY(plane, 60);
-        plane = rotateX(plane, Math.atan2(1,Math.sqrt(2))/Math.PI*180);
-        plane = rotateZ(plane, -45);
-        plane = translatePlane(plane, [-1,-1,-1]);
-        plane = rotateZ(plane, 180);
-        plane = rotateX(plane, 90);
-
-        // Fudge so first set of stuff is roughly on xy plane,
-        // since that's what I assume when making cylinders
-        plane = rotateY(plane, -90);
-        plane = rotateZ(plane, -90);
-
-        planes[i] = plane;
-      }
-    }
-
-    let clay = CSG.cube({radius: 10});
+  if (true) {
+    let knife = CSG.cube({radius: 2*scale});
     for (let planeSpec of planes) {
       let normal = planeSpec[0];
       let offset = planeSpec[1];
-      //let plane = new CSG.Plane(normal, offset);
+
+      if (normal[0]>0 && normal[1]>0 && normal[2]>0) continue;
+
+      offset -= thickWallThickness;
       var plane = CSG.Plane.fromNormalAndPoint(normal, [offset*normal[0], offset*normal[1], offset*normal[2]]);
-      clay = clay.cutByPlane(plane);
+      knife = knife.cutByPlane(plane);
     }
-
-
-    // Figure out bounding box
-    if (false) {
-      console.log("clay.getBounds() = "+clay.getBounds());
-      console.log("clay.getBounds()[0] = "+clay.getBounds()[0]);
-      console.log("clay.getBounds()[1] = "+clay.getBounds()[1]);
-      console.log("clay.getBounds()[0].x = "+clay.getBounds()[0].x);
-      console.log("clay.getBounds()[0].y = "+clay.getBounds()[0].y);
-      console.log("clay.getBounds()[0].z = "+clay.getBounds()[0].z);
-      console.log("clay.getBounds()[1].x = "+clay.getBounds()[1].x);
-      console.log("clay.getBounds()[1].y = "+clay.getBounds()[1].y);
-      console.log("clay.getBounds()[1].z = "+clay.getBounds()[1].z);
-    }
-
-    let scale = modelWidth/(clay.getBounds()[1].y - clay.getBounds()[0].y);  // arbitrary one of the three
-    console.log("scaling by "+scale+" to get modelWidth="+modelWidth);
-
-    clay = clay.scale(scale);
-    if (false) {
-      console.log("clay.getBounds() = "+clay.getBounds());
-      console.log("clay.getBounds()[0] = "+clay.getBounds()[0]);
-      console.log("clay.getBounds()[1] = "+clay.getBounds()[1]);
-      console.log("clay.getBounds()[0].x = "+clay.getBounds()[0].x);
-      console.log("clay.getBounds()[0].y = "+clay.getBounds()[0].y);
-      console.log("clay.getBounds()[0].z = "+clay.getBounds()[0].z);
-      console.log("clay.getBounds()[1].x = "+clay.getBounds()[1].x);
-      console.log("clay.getBounds()[1].y = "+clay.getBounds()[1].y);
-      console.log("clay.getBounds()[1].z = "+clay.getBounds()[1].z);
-    }
-
-    for (let i = 0; i < planes.length; ++i) {
-      planes[i] = scalePlane(planes[i], scale);
-    }
-
-    if (true) {
-      let knife = CSG.cube({radius: 2*scale});
-      for (let planeSpec of planes) {
-        let normal = planeSpec[0];
-        let offset = planeSpec[1];
-
-        if (normal[0]>0 && normal[1]>0 && normal[2]>0) continue;
-
-        offset -= thickWallThickness;
-        var plane = CSG.Plane.fromNormalAndPoint(normal, [offset*normal[0], offset*normal[1], offset*normal[2]]);
-        knife = knife.cutByPlane(plane);
-      }
-      clay = clay.subtract(knife);
-    }
-
-    if (true) {
-      // Try to place cylinders.
-      let cyls = null;
-
-      {
-        // one of the cylinders on corner face
-        let x = 10;
-        let y = 4.5;
-        let cyl = CSG.cylinder({
-          start: [x,y,thinWallThickness],  // default start is [0,-1,0]
-          end: [x,y,thickWallThickness+.5], // default end is [0,1,0]
-          radius: cylinderDiameter/2., // default radius is 1
-          resolution: cylinderResolution, // default resolution is 32
-
-          //center: true, // default: center:false   XXX doesn't seem to matter?
-          center: [true,true,false], // default: center:false   XXX doesn't seem to matter-- always centers??
-        });
-        cyls = cyl;
-      }
-
-      {
-        // 1 of the cylinders on "face" face
-        let facePlane = planes[1];
-        let [faceNormal,faceOffset] = facePlane;
-
-        let start = [14.75, 11, 0];
-
-        // Adjust start so it's on the plane
-        let delta = sxv(faceOffset - dot(faceNormal, start), faceNormal);
-        start = vpv(start, delta);
-        let end = vpv(start, sxv(-(thickWallThickness+.5), faceNormal));
-
-        // Adjust start by thinWallThickness
-        start = vpv(start, sxv(-thinWallThickness, faceNormal));
-
-        let cyl = makeCylinderTheWayIThoughtItWasSupposedToWork({
-          start: start,
-          end: end,
-          radius: cylinderDiameter/2.,
-          resolution: cylinderResolution,
-        });
-
-        cyls = cyls.union(cyl);
-      }
-
-      {
-        // the cylinder on one of the "edge" faces
-        let facePlane = planes[2];
-        let [faceNormal,faceOffset] = facePlane;
-
-        //let start = [5, 16.5, 0];
-        let start = [4.5, 16.675, 0];
-
-        // Adjust start so it's on the plane
-        let delta = sxv(faceOffset - dot(faceNormal, start), faceNormal);
-        start = vpv(start, delta);
-        let end = vpv(start, sxv(-(thickWallThickness+.5), faceNormal));
-
-        // Adjust start by thinWallThickness
-        start = vpv(start, sxv(-thinWallThickness, faceNormal));
-
-        let cyl = makeCylinderTheWayIThoughtItWasSupposedToWork({
-          start: start,
-          end: end,
-          radius: cylinderDiameter/2.,
-          resolution: cylinderResolution,
-        });
-
-        cyls = cyls.union(cyl);
-      }
-
-      if (true) {
-        cyls = cyls.union(cyls.mirrored(CSG.Plane.fromPoints([0,0,0],[1,1,0],[1,1,1])));
-      }
-      if (true) {
-        cyls = cyls.union(cyls.rotateZ(90).rotateY(90))
-                   .union(cyls.rotateY(-90).rotateZ(-90));
-      }
-
-      //clay = clay.union(cyls);
-      clay = clay.subtract(cyls);
-      //clay = cyls;
-    }
-
-    clay = clay.translate([separation/2,separation/2,separation/2]);
-
-    let answer = clay;
-    if (false) {
-      // Replicate 8 times
-      answer = answer.union(answer.rotateZ(90));
-      answer = answer.union(answer.rotateZ(180));
-      answer = answer.union(answer.rotateX(180));
-    }
-
-    return answer;
+    clay = clay.subtract(knife);
   }
+
+  if (doPostRound && postRoundRadius > 0.) {
+    console.log("    starting post-round");
+    clay = clay.contract(postRoundRadius, postRoundRes);
+    console.log("    halfway done with post-round");
+    clay = clay.expand(postRoundRadius, postRoundRes);
+    console.log("    done with post-round");
+  }
+
+  if (true) {
+    // Try to place cylinders.
+    let cyls = null;
+
+    {
+      // one of the cylinders on corner face
+      let x = 10;
+      let y = 4.5;
+      let cyl = CSG.cylinder({
+        start: [x,y,thinWallThickness],  // default start is [0,-1,0]
+        end: [x,y,thickWallThickness+.5], // default end is [0,1,0]
+        radius: cylinderDiameter/2., // default radius is 1
+        resolution: cylinderResolution, // default resolution is 32
+
+        //center: true, // default: center:false   XXX doesn't seem to matter?
+        center: [true,true,false], // default: center:false   XXX doesn't seem to matter-- always centers??
+      });
+      cyls = cyl;
+    }
+
+    {
+      // 1 of the cylinders on "face" face
+      let facePlane = planes[1];
+      let [faceNormal,faceOffset] = facePlane;
+
+      let start = [14.75, 11, 0];
+
+      // Adjust start so it's on the plane
+      let delta = sxv(faceOffset - dot(faceNormal, start), faceNormal);
+      start = vpv(start, delta);
+      let end = vpv(start, sxv(-(thickWallThickness+.5), faceNormal));
+
+      // Adjust start by thinWallThickness
+      start = vpv(start, sxv(-thinWallThickness, faceNormal));
+
+      let cyl = makeCylinderTheWayIThoughtItWasSupposedToWork({
+        start: start,
+        end: end,
+        radius: cylinderDiameter/2.,
+        resolution: cylinderResolution,
+      });
+
+      cyls = cyls.union(cyl);
+    }
+
+    {
+      // the cylinder on one of the "edge" faces
+      let facePlane = planes[2];
+      let [faceNormal,faceOffset] = facePlane;
+
+      //let start = [5, 16.5, 0];
+      let start = [4.5, 16.675, 0];
+
+      // Adjust start so it's on the plane
+      let delta = sxv(faceOffset - dot(faceNormal, start), faceNormal);
+      start = vpv(start, delta);
+      let end = vpv(start, sxv(-(thickWallThickness+.5), faceNormal));
+
+      // Adjust start by thinWallThickness
+      start = vpv(start, sxv(-thinWallThickness, faceNormal));
+
+      let cyl = makeCylinderTheWayIThoughtItWasSupposedToWork({
+        start: start,
+        end: end,
+        radius: cylinderDiameter/2.,
+        resolution: cylinderResolution,
+      });
+
+      cyls = cyls.union(cyl);
+    }
+
+    if (true) {
+      cyls = cyls.union(cyls.mirrored(CSG.Plane.fromPoints([0,0,0],[1,1,0],[1,1,1])));
+    }
+    if (true) {
+      cyls = cyls.union(cyls.rotateZ(90).rotateY(90))
+                 .union(cyls.rotateY(-90).rotateZ(-90));
+    }
+
+    //clay = clay.union(cyls);
+    clay = clay.subtract(cyls);
+    //clay = cyls;
+  }
+
+  clay = clay.translate([separation/2,separation/2,separation/2]);
+
+  let answer = clay;
+  if (false) {
+    // Replicate 8 times
+    answer = answer.union(answer.rotateZ(90));
+    answer = answer.union(answer.rotateZ(180));
+    answer = answer.union(answer.rotateX(180));
+  }
+
+  return answer;
 }
