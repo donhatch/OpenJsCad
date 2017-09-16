@@ -36,6 +36,7 @@ function main() {
   let cylinderResolution = 40;
 
 
+  let showMagnetsOnly = false;
   let swissCheese = false;  // set to true to force thinWallThickness to 0
 
 
@@ -50,7 +51,6 @@ function main() {
     dimpleSphereRadius *= scaleFudge;
     thinWallThickness *= scaleFudge;
     cylinderDiameter *= scaleFudge;
-    
   }
 
   //==================================================
@@ -342,6 +342,8 @@ function main() {
     // Try to place cylindrical holes.
     let cyls = null;
 
+    let cylHeight = thickWallThickness;
+
     {
       // one of the cylinders on corner face
       let x = 10.5;
@@ -349,7 +351,7 @@ function main() {
       let y = 5.5;
       let cyl = CSG.cylinder({
         start: [x,y,thinWallThickness],  // default start is [0,-1,0]
-        end: [x,y,thickWallThickness+.5], // default end is [0,1,0]
+        end: [x,y,thinWallThickness+cylHeight], // default end is [0,1,0]
         radius: cylinderDiameter/2., // default radius is 1
         resolution: cylinderResolution, // default resolution is 32
 
@@ -369,10 +371,9 @@ function main() {
       // Adjust start so it's on the plane
       let delta = sxv(faceOffset - dot(faceNormal, start), faceNormal);
       start = vpv(start, delta);
-      let end = vpv(start, sxv(-(thickWallThickness+.5), faceNormal));
-
       // Adjust start by thinWallThickness
       start = vpv(start, sxv(-thinWallThickness, faceNormal));
+      let end = vpv(start, sxv(-thickWallThickness, faceNormal));
 
       let cyl = makeCylinderTheWayIThoughtItWasSupposedToWork({
         start: start,
@@ -398,10 +399,10 @@ function main() {
       // Adjust start so it's on the plane
       let delta = sxv(faceOffset - dot(faceNormal, start), faceNormal);
       start = vpv(start, delta);
-      let end = vpv(start, sxv(-(thickWallThickness+.5), faceNormal));
-
       // Adjust start by thinWallThickness
       start = vpv(start, sxv(-thinWallThickness, faceNormal));
+      let end = vpv(start, sxv(-thickWallThickness, faceNormal));
+
 
       let cyl = makeCylinderTheWayIThoughtItWasSupposedToWork({
         start: start,
@@ -424,6 +425,10 @@ function main() {
     //clay = clay.union(cyls);
     clay = clay.subtract(cyls);
     //clay = cyls;
+
+    if (showMagnetsOnly) {
+      return cyls;
+    }
   }
 
   clay = clay.translate([separation/2,separation/2,separation/2]);
