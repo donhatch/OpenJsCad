@@ -19,8 +19,8 @@ function main() {
 
   let doPreRound = true;
   let preRoundRadius = .75;
-  let preRoundRes = 20;
-  //let preRoundRes = 40; // looks better but takes a while
+  //let preRoundRes = 20;
+  let preRoundRes = 40; // looks better but takes a while
 
   let thickWallThickness = 2;
 
@@ -344,8 +344,9 @@ function main() {
 
     {
       // one of the cylinders on corner face
-      let x = 10;
-      let y = 4.5;
+      let x = 10.5;
+      //let y = 4.5;
+      let y = 5.5;
       let cyl = CSG.cylinder({
         start: [x,y,thinWallThickness],  // default start is [0,-1,0]
         end: [x,y,thickWallThickness+.5], // default end is [0,1,0]
@@ -389,7 +390,10 @@ function main() {
       let [faceNormal,faceOffset] = facePlane;
 
       //let start = [5, 16.5, 0];
-      let start = [4.5, 16.675, 0];
+      //let start = [4.5, 16.675, 0];  // had this for a while, Melinda pointed out it won't have clearance
+      //let start = [5.125, 16.675, 0];  // too close to edge! red
+      //let start = [5.125, 16.5, 0];  // pretty good.  magnets might still be brushing though
+      let start = [5.25, 16.5, 0];  // pretty good.  magnets might still be brushing though
 
       // Adjust start so it's on the plane
       let delta = sxv(faceOffset - dot(faceNormal, start), faceNormal);
