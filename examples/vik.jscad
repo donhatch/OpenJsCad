@@ -11,32 +11,47 @@ function main() {
   // Melinda's width is 17.52 mm (in some early model)
   let modelWidth = 20;
 
-  let thickWallThickness = 2;
-  //let thinWallThickness = .7;  // .7 is minimum allowed
-  let thinWallThickness = .675;  // .7 is minimum allowed
-  let cylinderDiameter = 4;
-  let cylinderResolution = 40;
-
   let separation = 0.;
   //let separation = 3;
   //let separation = -.0001;
   //let separation = 1.5;
   //let separation = -3;
 
+  let doPreRound = true;
   let preRoundRadius = .75;
   let preRoundRes = 20;
+  //let preRoundRes = 40; // looks better but takes a while
 
-  //let postRoundRadius = .5;
-  let postRoundRadius = .675;
-  //let postRoundRadius = .75;
-  //let postRoundRadius = 1;  // never finishes?
-  let postRoundRes = 20;
+  let thickWallThickness = 2;
 
-  // doing both takes a long time, not really feasible
-  let doPreRound = true;
-  let doPostRound = false;
+
+  let dimpleRadius = .5;
+  let dimpleDiskRadiusDegrees = 60.;
+  let dimpleSphereRadius = dimpleRadius / Math.sin(dimpleDiskRadiusDegrees/180.*Math.PI);
+
+  //let thinWallThickness = .7;  // .7 is minimum allowed
+  let thinWallThickness = .675;  // .7 is minimum allowed
+
+  let cylinderDiameter = 4;
+  let cylinderResolution = 40;
+
 
   let swissCheese = false;  // set to true to force thinWallThickness to 0
+
+
+  // Note, scaleFudge other than 1 doesn't really work since the placements of dimples/pimples/cyls is still in the original space
+  let scaleFudge = 1.;
+  {
+    modelWidth *= scaleFudge;
+    separation *= scaleFudge;
+    preRoundRadius *= scaleFudge;
+    thickWallThickness *= scaleFudge;
+    dimpleRadius *= scaleFudge;
+    dimpleSphereRadius *= scaleFudge;
+    thinWallThickness *= scaleFudge;
+    cylinderDiameter *= scaleFudge;
+    
+  }
 
   //==================================================
 
@@ -257,6 +272,57 @@ function main() {
   }
 
   if (true) {
+    // Try to place the dimples/pimples.
+    let facePlane = planes[4];
+    let [faceNormal,faceOffset] = facePlane;
+    let elevationFudge = Math.cos(dimpleDiskRadiusDegrees/180.*Math.PI) * dimpleSphereRadius;
+    console.log("elevationFudge = "+elevationFudge);
+    let pimples = [];
+    let dimples = [];
+    {
+      let center = [0,-2.25,3];
+      // Adjust center so it's on the plane
+      let delta = sxv(faceOffset - dot(faceNormal, center), faceNormal);
+      center = vpv(center, delta);
+      let sphere = CSG.sphere({
+        radius: dimpleSphereRadius,
+        center: center,
+        resolution: 40,  // default is 12
+      });
+      pimples.push(sphere.translate(sxv(-elevationFudge, faceNormal)));
+      sphere = sphere.mirrored(CSG.Plane.fromPoints([0,0,0],[1,0,0],[1,1,1]));
+      dimples.push(sphere.translate(sxv(elevationFudge, faceNormal)));
+    }
+    {
+      let center = [0,-1.1,10];
+      // Adjust center so it's on the plane
+      let delta = sxv(faceOffset - dot(faceNormal, center), faceNormal);
+      center = vpv(center, delta);
+      let sphere = CSG.sphere({
+        radius: dimpleSphereRadius,
+        center: center,
+        resolution: 40,  // default is 12
+      });
+      pimples.push(sphere.translate(sxv(-elevationFudge, faceNormal)));
+      sphere = sphere.mirrored(CSG.Plane.fromPoints([0,0,0],[1,0,0],[1,1,1]));
+      dimples.push(sphere.translate(sxv(elevationFudge, faceNormal)));
+    }
+    // convert from array to single object
+    pimples = pimples.reduce((a,b) => a.union(b));
+    dimples = dimples.reduce((a,b) => a.union(b));
+
+    if (true) {
+      pimples = pimples.union(pimples.rotateZ(90).rotateY(90))
+                       .union(pimples.rotateY(-90).rotateZ(-90));
+      dimples = dimples.union(dimples.rotateZ(90).rotateY(90))
+                       .union(dimples.rotateY(-90).rotateZ(-90));
+    }
+
+    clay = clay.union(pimples);
+    clay = clay.subtract(dimples);
+  }
+
+  if (true) {
     let knife = CSG.cube({radius: 2*scale});
     for (let planeSpec of planes) {
       let normal = planeSpec[0];
@@ -271,16 +337,9 @@ function main() {
     clay = clay.subtract(knife);
   }
 
-  if (doPostRound && postRoundRadius > 0.) {
-    console.log("    starting post-round");
-    clay = clay.contract(postRoundRadius, postRoundRes);
-    console.log("    halfway done with post-round");
-    clay = clay.expand(postRoundRadius, postRoundRes);
-    console.log("    done with post-round");
-  }
 
   if (true) {
-    // Try to place cylinders.
+    // Try to place cylindrical holes.
     let cyls = null;
 
     {
