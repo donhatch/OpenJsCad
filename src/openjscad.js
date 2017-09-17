@@ -1165,7 +1165,10 @@ OpenJsCad.Processor.prototype = {
     var blob;
     if(format == "stl")
     {
-      blob=this.currentObject.fixTJunctions().toStlBinary();
+      //blob=this.currentObject.fixTJunctions().toStlBinary();
+      console.log("writing as ascii...");
+      blob=this.currentObject.fixTJunctions().toStlString();
+      console.log("wrote as ascii");
     }
     else if(format == "x3d") {
       blob=this.currentObject.fixTJunctions().toX3D();
