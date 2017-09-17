@@ -1,3 +1,4 @@
+"use strict";
 // TODO: convex minkowski
 // TODO: convex expand in terms of convex minkowski
 // TODO: convex expand using a clever patch
@@ -18,11 +19,11 @@ function main() {
     // Melinda's width is 17.52 mm (in some early model)
     let modelWidth = 20;
 
-    let separation = 0.;
+    //let separation = 0.;  // to put corner at origin
     //let separation = 3;
     //let separation = -.0001;
     //let separation = 1.5;
-    //let separation = -3;
+    let separation = -modelWidth;  // to center it, roughly
 
     let doPreRound = true;
     let preRoundRadius = .75;
@@ -95,7 +96,17 @@ function main() {
     };
     let len2 = v => dot(v,v);
     let len = v => Math.sqrt(len2(v));
-    let normalized = v => sxv(len(v), v);
+    let normalizedVecAsArray = v => sxv(len(v), v);
+
+    let normalizedCsgVector = v => v.scale(1./v.length());
+
+    // determinant of matrix whose rows are:
+    //      b-a
+    //      c-a
+    //      d-a
+    let sixTimesTetVolume = (a,b,c,d) => {
+      return b.minus(a).cross(c.minus(a)).dot(d.minus(a));
+    };
 
     //
     // Probably ill-advised geometry / vector math functions...
@@ -187,7 +198,7 @@ function main() {
         resolution: cylinderResolution,
       });
       cyl = cyl.scale([1,1,len(vmv(end, start))]);
-      let dir = normalized(vmv(end, start));
+      let dir = normalizedVecAsArray(vmv(end, start));
       cyl = rotateCSGtakingUnitVectorToUnitVector(cyl, [0,0,1], dir);
       cyl = cyl.translate(start);
       return cyl;
@@ -264,13 +275,8 @@ function main() {
       return C;
     }
 
-    // Strange but simple semantics: resolution bevels are made, even if dihedral angles are wildly different.
-    // And, resolution must be a power of 2.
-    // That makes the spherical patches not too hard to grapple.
-    // And, all vertices must have valence 3.
-    let simpleConvexExpand = (A,radius,log2resolution) => {
-      console.log("        in simpleConvexExpand");
-
+    // utility function for getting one's bearings in a CSG mesh
+    let getMeshArrays = A => {
       let verts = [];
       let f2v = [];  // face to vertex indices
       {
@@ -373,6 +379,244 @@ function main() {
         }
       }
       console.log("      v2e = "+JSON.stringify(v2e));
+      return [verts,f2v,e2v,f2e,e2f,e2next,e2prev,v2e];
+    }; // getMeshArrays
+
+
+    // resolution is number of subdivs of 360 degrees.
+    // actual number of subdivs is formed by rounding.
+    // verts must be trivalent.
+    let convexExpand = (A,radius,resolution) => {
+      let [verts,f2v,e2v,f2e,e2f,e2next,e2prev,v2e] = getMeshArrays(A);
+
+      let answerPolygons = [];
+
+      if (true) {
+        // Each face in A produces a face in answer.
+        for (let polygon of A.polygons) {
+          let offset = polygon.plane.normal.scale(radius);
+          let answerPolygonVerts = [];
+          for (let vertex of polygon.vertices) {
+            answerPolygonVerts.push(vertex.translate(offset));
+          }
+          answerPolygons.push(new CSG.Polygon(answerPolygonVerts));
+        }
+      }
+
+      if (true) {
+        // Each edge in A produces a cylindrical patch in answer.
+        for (let iWholeEdge = 0; 2*iWholeEdge < e2v.length; iWholeEdge++) {
+          let iEdge = 2*iWholeEdge;
+          let oEdge = iEdge+1;
+          let f0 = e2f[iEdge];
+          let f1 = e2f[oEdge];
+          let v0 = e2v[iEdge][0];
+          let v1 = e2v[iEdge][1];
+          // The edge on f0 is [v0,v1].
+          // The edge on f1 is [v1,v0].
+          let f0normal = A.polygons[f0].plane.normal;
+          let f1normal = A.polygons[f1].plane.normal;
+
+          let angle = angleBetweenUnitVectors(f0normal, f1normal);
+          let nSubdivsHere = Math.max(1, Math.round(angle/(2*Math.PI)*resolution));
+          for (let i = 0; i < nSubdivsHere; ++i) {
+            // calculate the two normals two different ways, to guarantee matching
+            answerPolygons.push(new CSG.Polygon([
+              verts[v0].translate(slerp(f0normal, f1normal, angle, i/nSubdivsHere).scale(radius)),
+              verts[v0].translate(slerp(f0normal, f1normal, angle, (i+1)/nSubdivsHere).scale(radius)),
+              verts[v1].translate(slerp(f1normal, f0normal, angle, (nSubdivsHere-1-i)/nSubdivsHere).scale(radius)),
+              verts[v1].translate(slerp(f1normal, f0normal, angle, (nSubdivsHere-i)/nSubdivsHere).scale(radius)),
+            ]));
+          }
+        }
+      }
+
+      // Each vertex in A produces a spherical patch in answer.
+
+      for (let iVert = 0; iVert < verts.length; ++iVert) {
+        let theVertex = verts[iVert];
+        let normals = [];
+        {
+          let edgesThisVert = v2e[iVert];
+          for (let iEdgeThisVert = 0; iEdgeThisVert < edgesThisVert.length; ++iEdgeThisVert) {
+            let e = edgesThisVert[iEdgeThisVert];
+            normals.push(A.polygons[e2f[e]].plane.normal);
+          }
+        }
+        normals.reverse(); // change from CW order to CCW order
+
+        let perimeter = [];
+        for (let i = 0; i < normals.length; ++i) {
+          let normal0 = normals[i];
+          let normal1 = normals[(i+1)%normals.length];
+          let angle = angleBetweenUnitVectors(normal0, normal1);
+          let nSubdivsHere = Math.max(1, Math.round(angle/(2*Math.PI)*resolution));
+          let perimeterSide = [];
+          for (let i = 0; i < nSubdivsHere; ++i) {
+            // compute backwards from normal1 to normal0, same as was done when computing
+            // the neighboring cylindrical patch, so that we'll get exactly same answer (hopefully)
+            let normal = slerp(normal1, normal0, angle, (nSubdivsHere-i)/nSubdivsHere);
+            perimeterSide.push(normal);
+          }
+          perimeter.push(perimeterSide);
+        }
+        //console.log("perimeter = "+JSON.stringify(perimeter));
+
+        let computeSphericalPatch = (perimeter, resolutionInCaseOfFurtherSubdivision) => {
+
+          let verboseLevel = 1;
+          if (verboseLevel >= 1) console.log("        in computeSphericalPatch");
+          if (verboseLevel >= 1) console.log("          perimeter.lengths = "+JSON.stringify(perimeter.map(x=>x.length)));
+
+          if (perimeter.length != 3) {
+            // We only know how to deal with a (subdivided) spherical triangle.
+            // So, triangulate.
+            // CBB: should pick triangulation smartly.  But for this application,
+            // it's a symmetric quad so it doesn't matter.
+            CHECK(perimeter.length === 4);
+            CHECK(resolutionInCaseOfFurtherSubdivision != -1);
+            let [ab,bc,cd,da] = perimeter;
+            let [a,b,c,d] = [ab[0],bc[0],cd[0],da[0]];
+            let angle = angleBetweenUnitVectors(a, c);
+            let nSubdivsHere = Math.max(1, Math.round(angle/(2*Math.PI)*resolutionInCaseOfFurtherSubdivision));
+            console.log("HEY! nSubdivsHere = "+nSubdivsHere+" compared to "+ab.length+" "+bc.length+" "+cd.length+" "+da.length+"");
+
+            let additionalDiagonalPoints = [];
+            for (let i = 1; i < nSubdivsHere; ++i) {
+              additionalDiagonalPoints.push(slerp(a, c, angle, i/nSubdivsHere));
+            }
+            console.log("additionalDiagonalPoints = "+JSON.stringify(additionalDiagonalPoints));
+            let ac = [a];
+            for (let i = 0; i < additionalDiagonalPoints.length; ++i) {
+              ac.push(additionalDiagonalPoints[i]);
+            }
+            let ca = [c];
+            for (let i = 0; i < additionalDiagonalPoints.length; ++i) {
+              ca.push(additionalDiagonalPoints[additionalDiagonalPoints.length-1-i]);
+            }
+            let answer0 = computeSphericalPatch([ab,bc,ca], -1);
+            let answer1 = computeSphericalPatch([ac,cd,da], -1);
+            console.log("answer0.length = "+answer0.length);
+            console.log("answer1.length = "+answer1.length);
+            //answer0 = [];
+            //answer1 = [];
+            let answer = [];
+            for (let normal of answer0) answer.push(normal);
+            for (let normal of answer1) answer.push(normal);
+            return answer;
+          }
+          CHECK(perimeter.length === 3);
+
+          let [v01,v12,v20] = perimeter;
+
+          // cycle until v12 is smallest
+          while (v01.length < v12.length || v20.length < v12.length) {
+            [v01,v12,v20] = [v12,v20,v01];
+          }
+
+          let gridPoints = [];
+          for (let iy = 0; iy <= Math.max(v01.length,v20.length); ++iy) {
+            gridPoints.push([]);
+            for (let ix = 0; ix <= v12.length; ++ix) {
+              gridPoints[iy].push(null);
+            }
+          }
+          for (let i = 0; i < v12.length; ++i) {
+            CHECK(gridPoints[0][i] === null);
+            gridPoints[0][i] = v12[i];
+          }
+          for (let i = 0; i < v01.length; ++i) {
+            CHECK(gridPoints[gridPoints.length-1-i][0] === null);
+            gridPoints[gridPoints.length-1-i][0] = v01[i];
+          }
+          for (let i = 0; i < v20.length-v01.length; ++i) {
+            CHECK(gridPoints[i+1][0] === null);
+            gridPoints[i+1][0] = v12[0];
+          }
+          for (let i = 0; i < v01.length-v20.length; ++i) {
+            CHECK(gridPoints[i][v12.length] === null);
+            gridPoints[i][v12.length] = v20[0];
+          }
+          for (let i = 0; i < v20.length; ++i) {
+            CHECK(gridPoints[Math.max(v01.length-v20.length,0)+i][v12.length] === null);
+            gridPoints[Math.max(v01.length-v20.length,0)+i][v12.length] = v20[i];
+          }
+          for (let i = 0; i < v12.length; ++i) {
+            CHECK(gridPoints[gridPoints.length-1][i+1] === null);
+            gridPoints[gridPoints.length-1][i+1] = v01[0];
+          }
+
+          for (let iy = 0; iy < gridPoints.length; ++iy) {
+            for (let ix = 0; ix < gridPoints[iy].length; ++ix) {
+              if (ix == 0 || iy == 0 || ix == gridPoints[iy].length-1 || iy == gridPoints.length-1) {
+                CHECK(gridPoints[iy][ix] !== null);
+              } else {
+                CHECK(gridPoints[iy][ix] === null);
+                let W = gridPoints[iy][0];
+                let E = gridPoints[iy][gridPoints[iy].length-1];
+                let S = gridPoints[0][ix];
+                let N = gridPoints[gridPoints.length-1][ix];
+                let SxN = S.cross(N);
+                let WxE = W.cross(E);
+                gridPoints[iy][ix] = normalizedCsgVector(WxE.cross(SxN));
+              }
+              CHECK(gridPoints[iy][ix] !== null);
+            }
+          }
+          let answer = [];
+          for (let iy = 0; iy+1 < gridPoints.length; ++iy) {
+            for (let ix = 0; ix+1 < gridPoints[iy].length; ++ix) {
+              let a = gridPoints[iy][ix];
+              let b = gridPoints[iy][ix+1];
+              let c = gridPoints[iy+1][ix+1];
+              let d = gridPoints[iy+1][ix];
+              if (c == d) {
+                answer.push([a,b,c]);
+              } else if (b == c) {
+                answer.push([a,b,d]);
+              } else if (a == d) {
+                answer.push([a,b,c]);
+              } else {
+                let volume = sixTimesTetVolume(a,b,c,d);
+                if (volume < 0.) {
+                  answer.push([a,b,c]);
+                  answer.push([a,c,d]);
+                } else {
+                  answer.push([a,b,d]);
+                  answer.push([b,c,d]);
+                }
+              }
+            }
+          }
+          if (verboseLevel >= 1) console.log("        out computeSphericalPatch");
+          return answer;
+        };  // computeSphericalPatch
+
+        let sphericalPatchNormalTriples = computeSphericalPatch(perimeter, resolution);
+        //console.log("sphericalPatchNormalTriples = "+JSON.stringify(sphericalPatchNormalTriples));
+        for (let normalTriple of sphericalPatchNormalTriples) {
+          let triVerts = [];
+          for (let normal of normalTriple) {
+            triVerts.push(theVertex.translate(normal.scale(radius)));
+          }
+          answerPolygons.push(new CSG.Polygon(triVerts));
+        }
+      }  // for iVert
+
+      let answer = CSG.fromPolygons(answerPolygons);
+
+      console.log("        out simpleConvexExpand");
+      return answer;
+    };  // convexExpand
+
+    // Strange but simple semantics: resolution bevels are made, even if dihedral angles are wildly different.
+    // And, resolution must be a power of 2.
+    // That makes the spherical patches not too hard to grapple.
+    // And, all vertices must have valence 3.
+    let simpleConvexExpand = (A,radius,log2resolution) => {
+      console.log("        in simpleConvexExpand");
+
+      let [verts,f2v,e2v,f2e,e2f,e2next,e2prev,v2e] = getMeshArrays(A);
 
       let answerPolygons = [];
 
@@ -474,10 +718,25 @@ function main() {
       let A = CSG.cube({
         radius: 1./3,
       });
-      let radius = .2;
-      let log2resolution = 5;
-      let B = simpleConvexExpand(A, radius, log2resolution);
-      //B = simpleConvexExpand(B, radius, log2resolution);
+      let radius = .1;
+      let log2resolution = 4;
+
+      let B = A;
+
+      if (true) {
+        // something random
+        B = B.intersect(B.rotateX(37).rotateY(22).rotateZ(13));
+      }
+
+      console.log("B = "+B);
+
+      if (false) {
+        B = simpleConvexExpand(B, radius, log2resolution);
+        //B = simpleConvexExpand(B, radius, log2resolution);
+      }
+      if (true) {
+        B = convexExpand(B, radius, 1<<log2resolution);
+      }
       return B;
     }
 
@@ -594,10 +853,12 @@ function main() {
 
       if (false) {
         //clay = clay.expand(preRoundRadius, preRoundRes);
-      } else {
+      } else if (false) {
         //let log2resolution = 3;   // that's equivalent to 32 around a circle, for the right angles. (confusing)
         let log2resolution = 4;   // that's equivalent to 64 around a circle, for the right angles. (confusing)
         clay = simpleConvexExpand(clay, preRoundRadius, log2resolution);
+      } else {
+        clay = convexExpand(clay, preRoundRadius, preRoundRes);
       }
 
       console.log("    done with pre-round");
