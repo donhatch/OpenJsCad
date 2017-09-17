@@ -27,8 +27,8 @@ function main() {
 
     let doPreRound = true;
     let preRoundRadius = .75;
-    let preRoundRes = 20;
-    //let preRoundRes = 40; // looks better but takes a while
+    //let preRoundRes = 20;
+    let preRoundRes = 40; // looks better but takes a while.  faster since using my own rounding
 
     let thickWallThickness = 2;
 
@@ -463,11 +463,6 @@ function main() {
         //console.log("perimeter = "+JSON.stringify(perimeter));
 
         let computeSphericalPatch = (perimeter, resolutionInCaseOfFurtherSubdivision) => {
-
-          let verboseLevel = 1;
-          if (verboseLevel >= 1) console.log("        in computeSphericalPatch");
-          if (verboseLevel >= 1) console.log("          perimeter.lengths = "+JSON.stringify(perimeter.map(x=>x.length)));
-
           if (perimeter.length != 3) {
             // We only know how to deal with a (subdivided) spherical triangle.
             // So, triangulate.
@@ -479,13 +474,10 @@ function main() {
             let [a,b,c,d] = [ab[0],bc[0],cd[0],da[0]];
             let angle = angleBetweenUnitVectors(a, c);
             let nSubdivsHere = Math.max(1, Math.round(angle/(2*Math.PI)*resolutionInCaseOfFurtherSubdivision));
-            console.log("HEY! nSubdivsHere = "+nSubdivsHere+" compared to "+ab.length+" "+bc.length+" "+cd.length+" "+da.length+"");
-
             let additionalDiagonalPoints = [];
             for (let i = 1; i < nSubdivsHere; ++i) {
               additionalDiagonalPoints.push(slerp(a, c, angle, i/nSubdivsHere));
             }
-            console.log("additionalDiagonalPoints = "+JSON.stringify(additionalDiagonalPoints));
             let ac = [a];
             for (let i = 0; i < additionalDiagonalPoints.length; ++i) {
               ac.push(additionalDiagonalPoints[i]);
@@ -496,10 +488,6 @@ function main() {
             }
             let answer0 = computeSphericalPatch([ab,bc,ca], -1);
             let answer1 = computeSphericalPatch([ac,cd,da], -1);
-            console.log("answer0.length = "+answer0.length);
-            console.log("answer1.length = "+answer1.length);
-            //answer0 = [];
-            //answer1 = [];
             let answer = [];
             for (let normal of answer0) answer.push(normal);
             for (let normal of answer1) answer.push(normal);
@@ -588,7 +576,6 @@ function main() {
               }
             }
           }
-          if (verboseLevel >= 1) console.log("        out computeSphericalPatch");
           return answer;
         };  // computeSphericalPatch
 
@@ -609,110 +596,6 @@ function main() {
       return answer;
     };  // convexExpand
 
-    // Strange but simple semantics: resolution bevels are made, even if dihedral angles are wildly different.
-    // And, resolution must be a power of 2.
-    // That makes the spherical patches not too hard to grapple.
-    // And, all vertices must have valence 3.
-    let simpleConvexExpand = (A,radius,log2resolution) => {
-      console.log("        in simpleConvexExpand");
-
-      let [verts,f2v,e2v,f2e,e2f,e2next,e2prev,v2e] = getMeshArrays(A);
-
-      let answerPolygons = [];
-
-      // Each face in A produces a face in answer.
-      for (let polygon of A.polygons) {
-        let offset = polygon.plane.normal.scale(radius);
-        let answerPolygonVerts = [];
-        for (let vertex of polygon.vertices) {
-          answerPolygonVerts.push(vertex.translate(offset));
-        }
-        answerPolygons.push(new CSG.Polygon(answerPolygonVerts));
-      }
-
-      // Each edge in A produces a cylindrical patch in answer.
-      for (let iWholeEdge = 0; 2*iWholeEdge < e2v.length; iWholeEdge++) {
-        let iEdge = 2*iWholeEdge;
-        let oEdge = iEdge+1;
-        let f0 = e2f[iEdge];
-        let f1 = e2f[oEdge];
-        let v0 = e2v[iEdge][0];
-        let v1 = e2v[iEdge][1];
-        // The edge on f0 is [v0,v1].
-        // The edge on f1 is [v1,v0].
-        let f0normal = A.polygons[f0].plane.normal;
-        let f1normal = A.polygons[f1].plane.normal;
-
-        let angle = angleBetweenUnitVectors(f0normal, f1normal);
-
-        let nSubdivsHere = 1<<log2resolution; // weird but tractable
-
-        for (let i = 0; i < nSubdivsHere; ++i) {
-          // calculate the two normals two different ways, to guarantee matching
-          answerPolygons.push(new CSG.Polygon([
-            verts[v0].translate(slerp(f0normal, f1normal, angle, i/nSubdivsHere).scale(radius)),
-            verts[v0].translate(slerp(f0normal, f1normal, angle, (i+1)/nSubdivsHere).scale(radius)),
-            verts[v1].translate(slerp(f1normal, f0normal, angle, (nSubdivsHere-1-i)/nSubdivsHere).scale(radius)),
-            verts[v1].translate(slerp(f1normal, f0normal, angle, (nSubdivsHere-i)/nSubdivsHere).scale(radius)),
-          ]));
-        }
-      }
-
-      // Each vertex in A produces a spherical patch in answer.
-      for (let iVert = 0; iVert < verts.length; ++iVert) {
-        let theVertex = verts[iVert];
-        //for (let x in theVertex) { console.log("          x = "+x); }
-        let edgesThisVert = v2e[iVert];
-        let answerPolygonVerts = [];
-        for (let iEdgeThisVert = 0; iEdgeThisVert < edgesThisVert.length; ++iEdgeThisVert) {
-          let e = edgesThisVert[iEdgeThisVert];
-          answerPolygonVerts.push(theVertex.translate(A.polygons[e2f[e]].plane.normal.scale(radius)));
-        }
-        answerPolygonVerts.reverse();
-
-        let patchPolygons = [new CSG.Polygon(answerPolygonVerts)];
-
-        for (let iRes = 0; iRes < log2resolution; ++iRes) {
-          let subdividedPatchPolygons = []
-          for (let patchPolygon of patchPolygons) {
-            let midpoints = [];
-            for (let iEdgeThisPoly = 0; iEdgeThisPoly < patchPolygon.vertices.length; ++iEdgeThisPoly) {
-              let v0 = patchPolygon.vertices[iEdgeThisPoly];
-              let v1 = patchPolygon.vertices[(iEdgeThisPoly+1)%patchPolygon.vertices.length];
-              let dir0 = v0.pos.minus(theVertex.pos);
-              let dir1 = v1.pos.minus(theVertex.pos);
-              // the lengths are equal to radius, but use length() instead, to avoid accumulating roundoff error.
-              dir0 = dir0.scale(1./dir0.length());
-              dir1 = dir1.scale(1./dir1.length());
-              let offset = slerp(dir0, dir1, angleBetweenUnitVectors(dir0, dir1), .5).scale(radius);
-              let midpoint = theVertex.translate(offset);
-              midpoints.push(midpoint);
-
-            }
-            subdividedPatchPolygons.push(new CSG.Polygon(midpoints));
-
-            for (let iVertThisPoly = 0; iVertThisPoly < patchPolygon.vertices.length; ++iVertThisPoly) {
-              subdividedPatchPolygons.push(new CSG.Polygon([
-                patchPolygon.vertices[iVertThisPoly],
-                midpoints[iVertThisPoly],
-                midpoints[(iVertThisPoly-1+midpoints.length)%midpoints.length],
-              ]));
-            }
-          }
-
-          patchPolygons = subdividedPatchPolygons;
-        }
-
-        for (let patchPolygon of patchPolygons) {
-          answerPolygons.push(patchPolygon);
-        }
-      }
-
-      let answer = CSG.fromPolygons(answerPolygons);
-
-      console.log("        out simpleConvexExpand");
-      return answer;
-    };  // simpleConvexExpand
 
     if (false) {
       let A = CSG.cube({
@@ -730,10 +613,6 @@ function main() {
 
       console.log("B = "+B);
 
-      if (false) {
-        B = simpleConvexExpand(B, radius, log2resolution);
-        //B = simpleConvexExpand(B, radius, log2resolution);
-      }
       if (true) {
         B = convexExpand(B, radius, 1<<log2resolution);
       }
@@ -852,7 +731,7 @@ function main() {
       console.log("    halfway done with pre-round");
 
       if (false) {
-        //clay = clay.expand(preRoundRadius, preRoundRes);
+        clay = clay.expand(preRoundRadius, preRoundRes);
       } else if (false) {
         //let log2resolution = 3;   // that's equivalent to 32 around a circle, for the right angles. (confusing)
         let log2resolution = 4;   // that's equivalent to 64 around a circle, for the right angles. (confusing)
