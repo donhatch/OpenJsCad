@@ -2,6 +2,8 @@
 // TODO: convex minkowski
 // TODO: convex expand in terms of convex minkowski
 // TODO: convex expand using a clever patch
+// TODO: add steiner point in middle of each 40-gon prior to triangulation for STL... I think?
+// TODO: other smart triangulation, with or without steiner points?
 
 function main() {
 
@@ -909,6 +911,18 @@ function main() {
     }
 
     clay = clay.translate([separation/2,separation/2,separation/2]);
+
+    if (true) {
+      let polygonSizes = clay.polygons.map(polygon => {
+        // return polygon.length;
+        let polygonSize = 0;
+        for (let vertex of polygon.vertices) {
+          polygonSize++;
+        }
+        return polygonSize;
+      });
+      console.log("      "+clay.polygons.length+" polygon sizes = "+JSON.stringify(polygonSizes));
+    }
 
     let answer = clay;
     if (false) {
