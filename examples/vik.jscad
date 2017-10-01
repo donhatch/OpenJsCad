@@ -16,6 +16,13 @@ function main() {
       }
     };
 
+
+    let showNonMagnets = true; // the actual model
+    let showMagnets = false;
+
+    let swissCheese = false;  // set to true to force thinWallThickness to 0
+
+
     // modelWidth=20, thickWallThickness=3, separation=1 or 3 or 10 -> $3.34 for one piece, $26.73 for 8 pieces, $15.04 if all fused together as 1 piece
 
     // Melinda's width is 17.52 mm (in some early model)
@@ -32,22 +39,29 @@ function main() {
     //let preRoundRes = 20;
     let preRoundRes = 40; // looks better but takes a while.  faster since using my own rounding
 
-    let thickWallThickness = 2;
+    let thickWallThickness = 2.675;  // was 2
 
-
-    let dimpleRadius = .5;
+    let dimpleDiameter = 1.5;  // was 1
     let dimpleDiskRadiusDegrees = 60.;
-    let dimpleSphereRadius = dimpleRadius / Math.sin(dimpleDiskRadiusDegrees/180.*Math.PI);
+
+    let backwardCompatibleWithFirstPrint = false;
+    if (backwardCompatibleWithFirstPrint) {
+      thickWallThickness = 2;
+      dimpleDiameter = 1;
+    }
+
+    let dimpleSphereRadius = (dimpleDiameter/2) / Math.sin(dimpleDiskRadiusDegrees/180.*Math.PI);
 
     //let thinWallThickness = .7;  // .7 is minimum allowed
     let thinWallThickness = .675;  // .7 is minimum allowed
+
+    //let cylHeight = thickWallThickness;
+    let cylHeight = 2;  // just enough to reach surface... but not enough, really
 
     let cylinderDiameter = 4;
     let cylinderResolution = 40;
 
 
-    let showMagnetsOnly = false;
-    let swissCheese = false;  // set to true to force thinWallThickness to 0
 
 
     // Note, scaleFudge other than 1 doesn't really work since the placements of dimples/pimples/cyls is still in the original space
@@ -57,7 +71,7 @@ function main() {
       separation *= scaleFudge;
       preRoundRadius *= scaleFudge;
       thickWallThickness *= scaleFudge;
-      dimpleRadius *= scaleFudge;
+      dimpleDiameter *= scaleFudge;
       dimpleSphereRadius *= scaleFudge;
       thinWallThickness *= scaleFudge;
       cylinderDiameter *= scaleFudge;
@@ -754,7 +768,10 @@ function main() {
       let pimples = [];
       let dimples = [];
       {
-        let center = [0,-2.25,3];
+        // the less exposed one.
+        // y barely big enough (in magnitude) to get rid of the red
+        let center = [0,-1.875,3];
+        if (backwardCompatibleWithFirstPrint) center[1] = -2.25;
         // Adjust center so it's on the plane
         let delta = sxv(faceOffset - dot(faceNormal, center), faceNormal);
         center = vpv(center, delta);
@@ -768,7 +785,10 @@ function main() {
         dimples.push(sphere.translate(sxv(elevationFudge, faceNormal)));
       }
       {
-        let center = [0,-1.1,10];
+        // the more exposed one.
+        // y barely big enough (in magnitude) to get rid of the red
+        let center = [0,-.8625,10];
+        if (backwardCompatibleWithFirstPrint) center[1] = -1.1;
         // Adjust center so it's on the plane
         let delta = sxv(faceOffset - dot(faceNormal, center), faceNormal);
         center = vpv(center, delta);
@@ -814,99 +834,105 @@ function main() {
 
     if (true) {
       // Try to place cylindrical holes.
-      let cyls = null;
 
-      let cylHeight = thickWallThickness;
+      let makeTheCyls = cylHeight => {
+        let cyls = null;
+        {
+          // one of the cylinders on corner face
+          let x = 10.5;
+          //let y = 4.5;
+          let y = 5.5;
+          let cyl = CSG.cylinder({
+            start: [x,y,thinWallThickness],  // default start is [0,-1,0]
+            end: [x,y,thinWallThickness+cylHeight], // default end is [0,1,0]
+            radius: cylinderDiameter/2., // default radius is 1
+            resolution: cylinderResolution, // default resolution is 32
 
-      {
-        // one of the cylinders on corner face
-        let x = 10.5;
-        //let y = 4.5;
-        let y = 5.5;
-        let cyl = CSG.cylinder({
-          start: [x,y,thinWallThickness],  // default start is [0,-1,0]
-          end: [x,y,thinWallThickness+cylHeight], // default end is [0,1,0]
-          radius: cylinderDiameter/2., // default radius is 1
-          resolution: cylinderResolution, // default resolution is 32
+            //center: true, // default: center:false   XXX doesn't seem to matter?
+            center: [true,true,false], // default: center:false   XXX doesn't seem to matter-- always centers??
+          });
+          cyls = cyl;
+        }
 
-          //center: true, // default: center:false   XXX doesn't seem to matter?
-          center: [true,true,false], // default: center:false   XXX doesn't seem to matter-- always centers??
-        });
-        cyls = cyl;
-      }
+        {
+          // 1 of the cylinders on "face" face
+          let facePlane = planes[1];
+          let [faceNormal,faceOffset] = facePlane;
 
-      {
-        // 1 of the cylinders on "face" face
-        let facePlane = planes[1];
-        let [faceNormal,faceOffset] = facePlane;
+          //let start = [14.75, 11, 0];
 
-        //let start = [14.75, 11, 0];
+          // try closer together to make room for the clips
+          // in one of the possible places
+          //let start = [15, 11.75, 0];  // bad
+          let start = [14.875, 11.625, 0];  // good
 
-        // try closer together to make room for the clips
-        // in one of the possible places
-        //let start = [15, 11.75, 0];  // bad
-        let start = [14.875, 11.625, 0];  // good
+          // Adjust start so it's on the plane
+          let delta = sxv(faceOffset - dot(faceNormal, start), faceNormal);
+          start = vpv(start, delta);
+          // Adjust start by thinWallThickness
+          start = vpv(start, sxv(-thinWallThickness, faceNormal));
+          let end = vpv(start, sxv(-cylHeight, faceNormal));
 
-        // Adjust start so it's on the plane
-        let delta = sxv(faceOffset - dot(faceNormal, start), faceNormal);
-        start = vpv(start, delta);
-        // Adjust start by thinWallThickness
-        start = vpv(start, sxv(-thinWallThickness, faceNormal));
-        let end = vpv(start, sxv(-thickWallThickness, faceNormal));
+          let cyl = makeCylinderTheWayIThoughtItWasSupposedToWork({
+            start: start,
+            end: end,
+            radius: cylinderDiameter/2.,
+            resolution: cylinderResolution,
+          });
 
-        let cyl = makeCylinderTheWayIThoughtItWasSupposedToWork({
-          start: start,
-          end: end,
-          radius: cylinderDiameter/2.,
-          resolution: cylinderResolution,
-        });
+          cyls = cyls.union(cyl);
+        }
 
-        cyls = cyls.union(cyl);
-      }
+        {
+          // the cylinder on one of the "edge" faces
+          let facePlane = planes[2];
+          let [faceNormal,faceOffset] = facePlane;
 
-      {
-        // the cylinder on one of the "edge" faces
-        let facePlane = planes[2];
-        let [faceNormal,faceOffset] = facePlane;
+          //let start = [5, 16.5, 0];
+          //let start = [4.5, 16.675, 0];  // had this for a while, Melinda pointed out it won't have clearance
+          //let start = [5.125, 16.675, 0];  // too close to edge! red
+          //let start = [5.125, 16.5, 0];  // pretty good.  magnets might still be brushing though
+          let start = [5.25, 16.5, 0];  // pretty good.  magnets might still be brushing though
 
-        //let start = [5, 16.5, 0];
-        //let start = [4.5, 16.675, 0];  // had this for a while, Melinda pointed out it won't have clearance
-        //let start = [5.125, 16.675, 0];  // too close to edge! red
-        //let start = [5.125, 16.5, 0];  // pretty good.  magnets might still be brushing though
-        let start = [5.25, 16.5, 0];  // pretty good.  magnets might still be brushing though
-
-        // Adjust start so it's on the plane
-        let delta = sxv(faceOffset - dot(faceNormal, start), faceNormal);
-        start = vpv(start, delta);
-        // Adjust start by thinWallThickness
-        start = vpv(start, sxv(-thinWallThickness, faceNormal));
-        let end = vpv(start, sxv(-thickWallThickness, faceNormal));
+          // Adjust start so it's on the plane
+          let delta = sxv(faceOffset - dot(faceNormal, start), faceNormal);
+          start = vpv(start, delta);
+          // Adjust start by thinWallThickness
+          start = vpv(start, sxv(-thinWallThickness, faceNormal));
+          let end = vpv(start, sxv(-cylHeight, faceNormal));
 
 
-        let cyl = makeCylinderTheWayIThoughtItWasSupposedToWork({
-          start: start,
-          end: end,
-          radius: cylinderDiameter/2.,
-          resolution: cylinderResolution,
-        });
+          let cyl = makeCylinderTheWayIThoughtItWasSupposedToWork({
+            start: start,
+            end: end,
+            radius: cylinderDiameter/2.,
+            resolution: cylinderResolution,
+          });
 
-        cyls = cyls.union(cyl);
-      }
+          cyls = cyls.union(cyl);
+        }
 
-      if (true) {
-        cyls = cyls.union(cyls.mirrored(CSG.Plane.fromPoints([0,0,0],[1,1,0],[1,1,1])));
-      }
-      if (true) {
-        cyls = cyls.union(cyls.rotateZ(90).rotateY(90))
-                   .union(cyls.rotateY(-90).rotateZ(-90));
-      }
-
-      //clay = clay.union(cyls);
-      clay = clay.subtract(cyls);
-      //clay = cyls;
-
-      if (showMagnetsOnly) {
+        if (true) {
+          cyls = cyls.union(cyls.mirrored(CSG.Plane.fromPoints([0,0,0],[1,1,0],[1,1,1])));
+        }
+        if (true) {
+          cyls = cyls.union(cyls.rotateZ(90).rotateY(90))
+                     .union(cyls.rotateY(-90).rotateZ(-90));
+        }
         return cyls;
+      };  // makeTheCyls
+
+      if (showNonMagnets) {
+        clay = clay.subtract(makeTheCyls(cylHeight + .1));
+      } else {
+        let makeEmptyCSG = () => {
+          // XXX is this the easiest way?
+          return CSG.cube().subtract(CSG.cube());
+        };
+        clay = makeEmptyCSG();
+      }
+      if (showMagnets) {
+        clay = clay.union(makeTheCyls(cylHeight));
       }
     }
 
