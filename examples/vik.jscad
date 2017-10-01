@@ -41,16 +41,16 @@ function main() {
 
     let thickWallThickness = 2.675;  // was 2
 
-    let dimpleDiameter = 1.5;  // was 1
-    let dimpleDiskRadiusDegrees = 60.;
+    let pipDiameter = 1.5;  // was 1
+    let pipDiskRadiusDegrees = 60.;
 
     let backwardCompatibleWithFirstPrint = false;
     if (backwardCompatibleWithFirstPrint) {
       thickWallThickness = 2;
-      dimpleDiameter = 1;
+      pipDiameter = 1;
     }
 
-    let dimpleSphereRadius = (dimpleDiameter/2) / Math.sin(dimpleDiskRadiusDegrees/180.*Math.PI);
+    let pipSphereRadius = (pipDiameter/2) / Math.sin(pipDiskRadiusDegrees/180.*Math.PI);
 
     //let thinWallThickness = .7;  // .7 is minimum allowed
     let thinWallThickness = .675;  // .7 is minimum allowed
@@ -64,15 +64,15 @@ function main() {
 
 
 
-    // Note, scaleFudge other than 1 doesn't really work since the placements of dimples/pimples/cyls is still in the original space
+    // Note, scaleFudge other than 1 doesn't really work since the placements of dips/pips/cyls is still in the original space
     let scaleFudge = 1.;
     {
       modelWidth *= scaleFudge;
       separation *= scaleFudge;
       preRoundRadius *= scaleFudge;
       thickWallThickness *= scaleFudge;
-      dimpleDiameter *= scaleFudge;
-      dimpleSphereRadius *= scaleFudge;
+      pipDiameter *= scaleFudge;
+      pipSphereRadius *= scaleFudge;
       thinWallThickness *= scaleFudge;
       cylinderDiameter *= scaleFudge;
     }
@@ -760,13 +760,13 @@ function main() {
     }
 
     if (true) {
-      // Try to place the dimples/pimples.
+      // Try to place the dips/pips.
       let facePlane = planes[4];
       let [faceNormal,faceOffset] = facePlane;
-      let elevationFudge = Math.cos(dimpleDiskRadiusDegrees/180.*Math.PI) * dimpleSphereRadius;
+      let elevationFudge = Math.cos(pipDiskRadiusDegrees/180.*Math.PI) * pipSphereRadius;
       console.log("elevationFudge = "+elevationFudge);
-      let pimples = [];
-      let dimples = [];
+      let pips = [];
+      let dips = [];
       {
         // the less exposed one.
         // y barely big enough (in magnitude) to get rid of the red
@@ -776,13 +776,13 @@ function main() {
         let delta = sxv(faceOffset - dot(faceNormal, center), faceNormal);
         center = vpv(center, delta);
         let sphere = CSG.sphere({
-          radius: dimpleSphereRadius,
+          radius: pipSphereRadius,
           center: center,
           resolution: 40,  // default is 12
         });
-        pimples.push(sphere.translate(sxv(-elevationFudge, faceNormal)));
+        pips.push(sphere.translate(sxv(-elevationFudge, faceNormal)));
         sphere = sphere.mirrored(CSG.Plane.fromPoints([0,0,0],[1,0,0],[1,1,1]));
-        dimples.push(sphere.translate(sxv(elevationFudge, faceNormal)));
+        dips.push(sphere.translate(sxv(elevationFudge, faceNormal)));
       }
       {
         // the more exposed one.
@@ -793,27 +793,27 @@ function main() {
         let delta = sxv(faceOffset - dot(faceNormal, center), faceNormal);
         center = vpv(center, delta);
         let sphere = CSG.sphere({
-          radius: dimpleSphereRadius,
+          radius: pipSphereRadius,
           center: center,
           resolution: 40,  // default is 12
         });
-        pimples.push(sphere.translate(sxv(-elevationFudge, faceNormal)));
+        pips.push(sphere.translate(sxv(-elevationFudge, faceNormal)));
         sphere = sphere.mirrored(CSG.Plane.fromPoints([0,0,0],[1,0,0],[1,1,1]));
-        dimples.push(sphere.translate(sxv(elevationFudge, faceNormal)));
+        dips.push(sphere.translate(sxv(elevationFudge, faceNormal)));
       }
       // convert from array to single object
-      pimples = pimples.reduce((a,b) => a.union(b));
-      dimples = dimples.reduce((a,b) => a.union(b));
+      pips = pips.reduce((a,b) => a.union(b));
+      dips = dips.reduce((a,b) => a.union(b));
 
       if (true) {
-        pimples = pimples.union(pimples.rotateZ(90).rotateY(90))
-                         .union(pimples.rotateY(-90).rotateZ(-90));
-        dimples = dimples.union(dimples.rotateZ(90).rotateY(90))
-                         .union(dimples.rotateY(-90).rotateZ(-90));
+        pips = pips.union(pips.rotateZ(90).rotateY(90))
+                         .union(pips.rotateY(-90).rotateZ(-90));
+        dips = dips.union(dips.rotateZ(90).rotateY(90))
+                         .union(dips.rotateY(-90).rotateZ(-90));
       }
 
-      clay = clay.union(pimples);
-      clay = clay.subtract(dimples);
+      clay = clay.union(pips);
+      clay = clay.subtract(dips);
     }
 
     if (true) {
