@@ -46,8 +46,9 @@ function main() {
 
     let backwardCompatibleWithFirstPrint = false;
     if (backwardCompatibleWithFirstPrint) {
-      thickWallThickness = 2;
+      //thickWallThickness = 2; // no, leave walls thick
       pipDiameter = 1;
+      // and we'll do some pip position adjustment later too
     }
 
     let pipSphereRadius = (pipDiameter/2) / Math.sin(pipDiskRadiusDegrees/180.*Math.PI);
@@ -478,6 +479,9 @@ function main() {
         }
         //console.log("perimeter = "+JSON.stringify(perimeter));
 
+        // Assuming it's a spherical *triangle*, perimeter should be a list of 3
+        // lists of points on unit sphere.  The first point in each list
+        // is the vertex, the remaining ones are subdivision points.
         let computeSphericalPatch = (perimeter, resolutionInCaseOfFurtherSubdivision) => {
           if (perimeter.length != 3) {
             // We only know how to deal with a (subdivided) spherical triangle.
